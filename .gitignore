@@ -1,2 +1,3 @@
 /Venv
 .env
+/__pycache__
