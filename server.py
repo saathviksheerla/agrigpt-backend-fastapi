@@ -221,7 +221,7 @@ async def send_to_agent(message, user_data):
                     "accept": "application/json",
                     "Content-Type": "application/json"
                 },
-                timeout=120.0  # 120 second timeout
+                timeout=300.0  # 300 second timeout
             )
             
             # Raise exception if request failed
