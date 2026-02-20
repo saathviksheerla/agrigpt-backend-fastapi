@@ -28,7 +28,7 @@ jobs:
              cd /agrigpt/agrigpt-backend-fastapi
 
             echo "==> Pulling latest code"
-            git pull origin main
+            git reset --hard origin/main
 
             echo "==> Activating virtual environment"
             source venv/bin/activate
