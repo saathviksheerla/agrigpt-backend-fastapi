@@ -292,6 +292,7 @@ async def send_to_agent(chatId: str, message: str, user_data: dict) -> str:
     
     print(f"\n🤖 CALLING AGENT SERVICE")
     print(f"   Agent URL: {AGENT_URL}")
+    print(f"   Chat Id: {chatId}")
     print(f"   User: {phone_number}")
     print(f"   Message: {message[:100]}...")
     
