@@ -291,6 +291,7 @@ async def send_to_agent(chatId: str, message: str, user_data: dict) -> str:
     
     print(f"\n🤖 CALLING AGENT SERVICE")
     print(f"   Agent URL: {AGENT_URL}")
+    print(f"   Chat Id: {chatId}")
     print(f"   User: {phone_number}")
     print(f"   Message: {message[:100]}...")
     
@@ -302,7 +303,7 @@ async def send_to_agent(chatId: str, message: str, user_data: dict) -> str:
             "message": message
         }
         
-        print(f"📤 Sending payload to agent...")
+        print(f"📤 Outgoing Payload: {json.dumps(payload)}")
         
         # Use httpx async client to make POST request to agent
         async with httpx.AsyncClient() as http_client:
