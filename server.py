@@ -92,6 +92,7 @@ class WhatsAppRequest(BaseModel):
     phoneNumber: str
     message: str
     language: str = "en"
+    language: str = "en"
 
 class WhatsAppResponse(BaseModel):
     """Response model for WhatsApp messages"""
@@ -299,12 +300,15 @@ async def send_to_agent(chatId: str, message: str, user_data: dict) -> str:
         # Prepare payload for agent service
         # Note: External agent service expects a JSON object with a 'message' field.
         # Sending extra fields like 'phone_number' may cause 422 errors due to strict schema validation.
+        # Note: External agent service expects a JSON object with a 'message' field.
+        # Sending extra fields like 'phone_number' may cause 422 errors due to strict schema validation.
         payload = {
             "chatId": chatId,
             "phone_number": phone_number,
             "message": message
         }
         
+        print(f"📤 Sending payload to agent: {json.dumps(payload)}")
         print(f"📤 Sending payload to agent: {json.dumps(payload)}")
         
         # Use httpx async client to make POST request to agent
@@ -459,9 +463,38 @@ async def handle_whatsapp_request(req: WhatsAppRequest):
                 print(f"⚠️ Translation error: {str(e)}, sending English.")
 
         # Step 6: Prepare and return response
+        # Step 5: Translate agent response if necessary
+        final_message = agent_response
+        if req.language and req.language != "en":
+            print(f"Step 4️⃣: Translating response to {req.language}...")
+            try:
+                # Use the internal SPEECH_BASE_URL (port 8001) for translation
+                # We can't use settings here as they aren't imported or defined, 
+                # but we know it's on 8001 from your previous diagnostics.
+                speech_svc_url = "http://localhost:8001/translate"
+                async with httpx.AsyncClient() as http_client:
+                    trans_resp = await http_client.post(
+                        speech_svc_url,
+                        json={
+                            "text": agent_response,
+                            "target_lang": req.language,
+                            "source_lang": "en"
+                        },
+                        timeout=30.0
+                    )
+                    if trans_resp.status_code == 200:
+                        final_message = trans_resp.json().get("translated_text", agent_response)
+                        print(f"✅ Translated response: {final_message[:100]}...")
+                    else:
+                        print(f"⚠️ Translation failed (status {trans_resp.status_code}), sending English.")
+            except Exception as e:
+                print(f"⚠️ Translation error: {str(e)}, sending English.")
+
+        # Step 6: Prepare and return response
         response_data = {
             "chatId": req.chatId,
             "phoneNumber": req.phoneNumber,
+            "message": final_message,
             "message": final_message,
             "timestamp": datetime.utcnow().isoformat(),
             "status": "success"
