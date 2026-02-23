@@ -1,4 +1,4 @@
-name: Claude Code PR Review & Auto Merge
+name: Claude PR Review
 
 on:
   pull_request:
@@ -8,103 +8,88 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  checks: write
 
 jobs:
   claude-review:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout PR branch
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
-        run: pip install anthropic requests
+      - run: pip install anthropic
 
-      - name: Get PR Diff
-        run: git diff origin/main..HEAD > pr_diff.txt
+      - run: git diff origin/main..HEAD > pr_diff.txt
 
-      - name: Claude Review via API
-        id: claude_review
+      - name: Claude Reviews
+        id: review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           python3 << 'PYEOF'
-          import anthropic
-          import os
+          import anthropic, os
 
-          with open("pr_diff.txt", "r") as f:
-              diff = f.read() or "No diff found"
+          diff = open("pr_diff.txt").read()[:3000] or "Empty diff"
+          author = os.environ["PR_AUTHOR"]
 
-          client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-
-          message = client.messages.create(
+          client = anthropic.Anthropic()
+          response = client.messages.create(
               model="claude-opus-4-6",
-              max_tokens=1024,
-              messages=[
-                  {
-                      "role": "user",
-                      "content": f"""You are a senior code reviewer for AgriGPT - a FastAPI backend for agricultural AI platform serving Indian farmers.
+              max_tokens=800,
+              messages=[{
+                  "role": "user",
+                  "content": f"""Senior engineer reviewing AgriGPT (FastAPI WhatsApp bot for Indian farmers).
 
-          Review the following PR diff and provide:
-          1. Summary of changes
-          2. Potential bugs or issues
-          3. Security concerns
-          4. Code quality feedback
-          5. Final verdict
+          PR by: {author}
+          Diff: {diff}
 
-          PR Diff:
-          {diff[:8000]}
+          Write a short human review:
+          - Start with "Hey {author}!"
+          - What's good ✅
+          - What needs fixing 🔍 (explain farmer impact if relevant)
+          - 1 line overall summary
 
-          End your response with exactly one line: 'VERDICT: APPROVE' or 'VERDICT: REQUEST_CHANGES'"""
-                  }
-              ]
+          End with VERDICT: APPROVE or VERDICT: REQUEST_CHANGES"""
+              }]
           )
 
-          review = message.content[0].text
-          print(review)
-
-          with open("claude_review.txt", "w") as f:
-              f.write(review)
-
-          if "VERDICT: APPROVE" in review:
-              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-                  f.write("verdict=APPROVE\n")
-          else:
-              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-                  f.write("verdict=REQUEST_CHANGES\n")
+          review = response.content[0].text
+          open("review.txt", "w").write(review)
+          verdict = "APPROVE" if "VERDICT: APPROVE" in review else "REQUEST_CHANGES"
+          open(os.environ["GITHUB_OUTPUT"], "a").write(f"verdict={verdict}\n")
           PYEOF
 
-      - name: Post Review Comment
+      - name: Post Review
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          REVIEW_BODY=$(cat claude_review.txt)
+          # Tag added so Workflow 2 can find this comment later
           gh pr comment ${{ github.event.pull_request.number }} \
-            --body "## 🤖 Claude Code Review
+            --body "<!-- claude-review -->
+          $(cat review.txt)
 
-          $REVIEW_BODY"
+          ---
+          💬 *Comment here if you have questions.*"
 
-      - name: Approve and Merge PR
-        if: steps.claude_review.outputs.verdict == 'APPROVE'
+      - name: Approve
+        if: steps.review.outputs.verdict == 'APPROVE'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr review ${{ github.event.pull_request.number }} --approve --body "✅ Claude approved this PR."
-          gh pr merge ${{ github.event.pull_request.number }} --squash --auto
+          gh pr review ${{ github.event.pull_request.number }} --approve \
+            --body "Looks good! ✅ Ready for human merge."
 
       - name: Request Changes
-        if: steps.claude_review.outputs.verdict == 'REQUEST_CHANGES'
+        if: steps.review.outputs.verdict == 'REQUEST_CHANGES'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr review ${{ github.event.pull_request.number }} \
-            --request-changes \
-            --body "❌ Claude requested changes. Please review the comments above."
+          gh pr review ${{ github.event.pull_request.number }} --request-changes \
+            --body "Few things to fix — see comments above 👆"
